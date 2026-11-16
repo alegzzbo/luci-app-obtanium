@@ -27,7 +27,7 @@ gh() {
 
 # fetch repo pre -> J (json), P (jsonpath prefix), TAG
 fetch() {
-	set -- "$(printf %s "$1" | sed -E "s#^https?://github\.com/##; s#\.git$##; s#/+$##" | cut -d/ -f1,2)" "$2"
+	set -- "$(printf %s "$1" | sed -E "s|^https?://github\.com/||; s|\.git$||; s|/+$||" | cut -d/ -f1,2)" "$2"
 	if [ "$2" = 1 ]; then
 		J=$(gh "$API/repos/$1/releases?per_page=3") && P='@[0]'
 	else

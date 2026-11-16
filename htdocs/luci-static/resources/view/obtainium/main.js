@@ -21,7 +21,7 @@ return view.extend({
 		self.fill(apps);
 
 		const token = E('input', {
-			type: 'password',
+			type: 'password', autocomplete: 'new-password',
 			class: 'cbi-input-password',
 			style: 'width:100%;max-width:26em;box-sizing:border-box',
 			placeholder: cfg.token_set ? '•••••• (задан, введите новый для замены)' : 'ghp_… (необязательно)'
