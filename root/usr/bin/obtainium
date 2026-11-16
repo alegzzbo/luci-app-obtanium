@@ -158,7 +158,11 @@ upd_one() {
 		curl -fsSL -m 600 -o "$D/$n" "$u" || { echo "ошибка загрузки $n"; rm -f $D/*.$EXT; return; }
 		files="$files $D/$n"
 	done <$D/s
-	if [ $PM = apk ]; then apk add --allow-untrusted $files; else opkg install $files; fi
+	if [ $PM = apk ]; then
+		apk add --allow-untrusted --no-network $files 2>/dev/null || apk add --allow-untrusted --timeout 15 $files
+	else
+		opkg install $files
+	fi
 	if [ $? = 0 ]; then
 		pkgs=""
 		for f in $files; do
