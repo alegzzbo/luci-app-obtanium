@@ -1,0 +1,179 @@
+#!/bin/sh
+# Obtainium for OpenWrt: install/update packages from GitHub releases
+. /lib/functions.sh
+C=obtainium
+D=/tmp/obtainium
+LOG=/tmp/obtainium.log
+LOCK=/tmp/obtainium.lock
+API=https://api.github.com
+T=$(printf '\t')
+mkdir -p $D
+
+# 25.12+ -> apk (.apk); <=24.10 -> opkg (.ipk)
+if command -v apk >/dev/null 2>&1; then PM=apk; EXT=apk; else PM=opkg; EXT=ipk; fi
+ARCH=$(sed -n "s/^DISTRIB_ARCH='\(.*\)'/\1/p" /etc/openwrt_release)
+REL=$(sed -n "s/^DISTRIB_RELEASE='\(.*\)'/\1/p" /etc/openwrt_release)
+TOKEN=$(uci -q get $C.main.token)
+
+jes() { printf %s "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+gh() {
+	if [ -n "$TOKEN" ]; then
+		curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $TOKEN" "$1"
+	else
+		curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' "$1"
+	fi
+}
+
+# fetch repo pre -> J (json), P (jsonpath prefix), TAG
+fetch() {
+	if [ "$2" = 1 ]; then
+		J=$(gh "$API/repos/$1/releases?per_page=3") && P='@[0]'
+	else
+		J=$(gh "$API/repos/$1/releases/latest") && P='@'
+	fi || return 1
+	TAG=$(jsonfilter -s "$J" -e "$P.tag_name")
+	[ -n "$TAG" ]
+}
+
+# assets of current release compatible with pkg manager (.apk/.ipk) and arch
+compat() {
+	jsonfilter -s "$J" -e "$P.assets[*].name" >$D/n
+	jsonfilter -s "$J" -e "$P.assets[*].browser_download_url" >$D/u
+	paste $D/n $D/u | grep -E "^[^$T]*\.$EXT$T" >$D/a0
+	if grep -qE "^[^$T]*$ARCH[^$T]*$T" $D/a0; then
+		grep -E "^[^$T]*($ARCH|_all\.|-all\.|noarch)[^$T]*$T" $D/a0
+	else
+		cat $D/a0
+	fi
+}
+
+# asset name -> version-independent regex
+suggest() {
+	local v=${2#v} ne ve
+	ne=$(printf %s "$1" | sed 's/[.+]/\\&/g')
+	if [ -n "$v" ]; then
+		ve=$(printf %s "$v" | sed 's/[.+]/\\&/g')
+		ne=$(printf %s "$ne" | sed "s|$ve|.*|g")
+	fi
+	printf '^%s$' "$ne"
+}
+
+cmd_cfg() {
+	printf '{"pm":"%s","ext":"%s","arch":"%s","rel":"%s","token_set":%s,"interval":"%s","auto":"%s"}\n' \
+		$PM $EXT "$ARCH" "$REL" "$([ -n "$TOKEN" ] && echo true || echo false)" \
+		"$(uci -q get $C.main.interval)" "$(uci -q get $C.main.auto)"
+}
+
+list_app() {
+	local s=$1 repo pre pat it lt
+	config_get repo $s repo; config_get pre $s pre 0; config_get pat $s pattern
+	config_get it $s installed; config_get lt $s latest
+	printf '%s{"id":"%s","repo":"%s","pre":%s,"pattern":"%s","installed":"%s","latest":"%s"}' \
+		"$SEP" "$s" "$(jes "$repo")" "$([ "$pre" = 1 ] && echo true || echo false)" "$(jes "$pat")" "$(jes "$it")" "$(jes "$lt")"
+	SEP=,
+}
+cmd_list() { config_load $C; SEP=; printf '['; config_foreach list_app app; printf ']\n'; }
+
+cmd_assets() { # repo pre pattern
+	local pat=$3 n u sel first=1 tot kept
+	if ! fetch "$1" "$2"; then
+		echo '{"error":"запрос не удался (лимит API / нет релизов / нет репозитория)"}'; return
+	fi
+	compat >$D/c
+	tot=$(wc -l <$D/a0); kept=$(wc -l <$D/c)
+	printf '{"tag":"%s","ext":"%s","hidden":%d,"assets":[' "$(jes "$TAG")" $EXT $((tot - kept))
+	while IFS="$T" read -r n u; do
+		[ -n "$n" ] || continue
+		if [ -z "$pat" ] || printf %s "$n" | grep -qE "$pat"; then sel=true; else sel=false; fi
+		[ $first = 1 ] || printf ,
+		first=0
+		printf '{"name":"%s","suggest":"%s","selected":%s}' "$(jes "$n")" "$(jes "$(suggest "$n" "$TAG")")" $sel
+	done <$D/c
+	printf ']}\n'
+}
+
+cmd_add() { # repo pre pattern
+	local r id
+	r=$(printf %s "$1" | sed -E 's#^https?://github\.com/##; s#\.git$##; s#/+$##' | cut -d/ -f1,2)
+	printf %s "$r" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "неверный репозиторий"; return; }
+	id=app_$(printf %s "$r" | tr -c 'A-Za-z0-9' _)
+	uci -q get $C.$id >/dev/null && { echo "уже добавлен"; return; }
+	uci set $C.$id=app
+	uci set $C.$id.repo="$r"; uci set $C.$id.pre="$2"; uci set $C.$id.pattern="$3"
+	uci commit $C; echo ok
+}
+cmd_edit() { uci set $C.$1.pre="$2"; uci set $C.$1.pattern="$3"; uci commit $C; echo ok; }
+cmd_del()  { uci delete $C.$1; uci commit $C; echo ok; }
+cmd_set()  { case $1 in token|interval|auto) uci set $C.main.$1="$2"; uci commit $C; echo ok;; *) echo bad;; esac; }
+
+check_one() {
+	local s=$1 repo pre
+	config_get repo $s repo; config_get pre $s pre 0
+	if fetch "$repo" "$pre"; then
+		uci set $C.$s.latest="$TAG"; echo "$repo: $TAG"
+	else
+		echo "$repo: ошибка (лимит API / нет релизов)"
+	fi
+}
+cmd_check() { config_load $C; if [ -n "$1" ]; then check_one "$1"; else config_foreach check_one app; fi; uci commit $C; }
+
+upd_one() {
+	local s=$1 repo pre pat it files= n u
+	config_get repo $s repo; config_get pre $s pre 0; config_get pat $s pattern; config_get it $s installed
+	echo "== $repo"
+	fetch "$repo" "$pre" || { echo "ошибка запроса"; return; }
+	uci set $C.$s.latest="$TAG"
+	if [ -z "$FORCE" ] && [ "$it" = "$TAG" ]; then echo "актуально ($TAG)"; return; fi
+	compat >$D/c
+	if [ -n "$pat" ]; then PAT="$pat" awk -F"$T" '$1 ~ ENVIRON["PAT"]' $D/c >$D/s; else cp $D/c $D/s; fi
+	[ -s $D/s ] || { echo "нет подходящих .$EXT в $TAG (менеджер: $PM, arch: $ARCH)"; return; }
+	rm -f $D/*.$EXT
+	while IFS="$T" read -r n u; do
+		[ -n "$n" ] || continue
+		echo "загрузка $n"
+		curl -fsSL -m 600 -o "$D/$n" "$u" || { echo "ошибка загрузки $n"; rm -f $D/*.$EXT; return; }
+		files="$files $D/$n"
+	done <$D/s
+	if [ $PM = apk ]; then apk add --allow-untrusted $files; else opkg install $files; fi
+	if [ $? = 0 ]; then
+		uci set $C.$s.installed="$TAG"; uci commit $C; echo "установлено $TAG"
+	else
+		echo "ошибка установки"
+	fi
+	rm -f $files
+}
+cmd_update()  { config_load $C; if [ -n "$1" ]; then upd_one "$1"; else config_foreach upd_one app; fi; uci commit $C; }
+cmd_install() { FORCE=1; cmd_update "$1"; }
+
+cmd_cron() {
+	local iv now last
+	iv=$(uci -q get $C.main.interval); iv=${iv:-24}
+	[ "$iv" -gt 0 ] 2>/dev/null || return
+	now=$(date +%s); last=$(cat /tmp/obtainium.last 2>/dev/null || echo 0)
+	[ $((now - last)) -lt $((iv * 3600 - 120)) ] && return
+	echo $now >/tmp/obtainium.last
+	cmd_check
+	[ "$(uci -q get $C.main.auto)" = 1 ] && cmd_update
+}
+
+cmd_bg() {
+	mkdir $LOCK 2>/dev/null || { echo busy; return; }
+	( trap 'rmdir $LOCK' EXIT; "$0" "$@" ) >$LOG 2>&1 </dev/null &
+	echo started
+}
+cmd_log()     { cat $LOG 2>/dev/null; }
+cmd_running() { [ -d $LOCK ] && echo 1 || echo 0; }
+
+main() {
+	local c=$1; shift
+	case $c in
+		cfg) cmd_cfg;; list) cmd_list;; assets) cmd_assets "$@";;
+		add) cmd_add "$@";; edit) cmd_edit "$@";; del) cmd_del "$@";; set) cmd_set "$@";;
+		check) cmd_check "$@";; update) cmd_update "$@";; install) cmd_install "$@";;
+		cron) cmd_cron;; bg) cmd_bg "$@";; log) cmd_log;; running) cmd_running;;
+		*) echo "usage: obtainium cfg|list|assets|add|edit|del|set|check|update|install|bg|log" ;;
+	esac
+}
+main "$@"
+exit 0

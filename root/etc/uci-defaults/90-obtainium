@@ -1,0 +1,5 @@
+#!/bin/sh
+grep -qs 'obtainium bg cron' /etc/crontabs/root || echo '0 * * * * /usr/bin/obtainium bg cron' >> /etc/crontabs/root
+/etc/init.d/cron enable 2>/dev/null
+/etc/init.d/cron restart 2>/dev/null
+exit 0

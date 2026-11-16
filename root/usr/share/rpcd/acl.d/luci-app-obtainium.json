@@ -1,0 +1,7 @@
+{
+	"luci-app-obtainium": {
+		"description": "Grant access to Obtainium",
+		"read":  { "file": { "/usr/bin/obtainium": [ "exec" ] } },
+		"write": { "file": { "/usr/bin/obtainium": [ "exec" ] } }
+	}
+}
