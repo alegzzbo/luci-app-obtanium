@@ -51,13 +51,7 @@ compat() {
 
 # asset name -> version-independent regex
 suggest() {
-	printf %s "$1" | awk '{
-		str = $0
-		gsub(/[-_][0-9]+(\.[0-9]+)+([-_][0-9a-zA-Z]+)?/, "___VER___", str)
-		gsub(/([.+()\[\]])/, "\&", str)
-		gsub(/___VER___/, ".*", str)
-		print "^" str "$"
-	}'
+	printf %s "$1" | sed -E 's/[-_][0-9]+(\.[0-9]+)+([-_][0-9A-Za-z]+)?/@@V@@/g; s/[.+()]/\\&/g; s/\[/\\[/g; s/\]/\\]/g; s/@@V@@/[-_][0-9][0-9A-Za-z.~+_-]*/g; s/^/^/; s/$/$/'
 }
 
 cmd_cfg() {
@@ -123,7 +117,7 @@ cmd_del()  {
 		fi
 		if [ -n "$pkg" ]; then
 			echo "== удаление пакета $pkg"
-			if [ $PM = apk ]; then apk del "$pkg"; else opkg remove "$pkg"; fi
+			if [ $PM = apk ]; then apk del $pkg; else opkg remove $pkg; fi
 		fi
 	fi
 	uci delete $C.$1; uci commit $C; echo ok
