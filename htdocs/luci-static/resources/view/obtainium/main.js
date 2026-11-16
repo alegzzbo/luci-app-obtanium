@@ -152,11 +152,33 @@ return view.extend({
 					E('button', { class: 'btn cbi-button', click: () => this.pick(a, p =>
 						sh('edit', a.id, b(a.pre), p).then(() => this.refresh())) }, 'Сборки'),
 					E('button', { class: 'btn cbi-button-action', click: () => this.bg('install', a.id) }, 'Установить'),
-					E('button', { class: 'btn cbi-button-remove', click: () =>
-						sh('del', a.id).then(() => this.refresh()) }, 'Удалить')
+					E('button', { class: 'btn cbi-button-remove', click: () => this.confirmDel(a) }, 'Удалить')
 				])
 			]);
 		}) : E('em', {}, 'Список пуст'));
+	},
+
+	confirmDel(app) {
+		const purge = E('input', { type: 'checkbox', style: 'margin:0;position:static' });
+		ui.showModal('Удаление репозитория', [
+			E('p', {}, `Удалить ${app.repo} из списка Obtainium?`),
+			E('label', { style: 'display:flex;align-items:center;gap:8px;margin:.6em 0;cursor:pointer;position:static' }, [
+				purge,
+				E('span', {}, 'Также удалить установленный пакет с роутера')
+			]),
+			E('div', { class: 'right', style: 'margin-top:1em;display:flex;justify-content:flex-end;gap:8px' }, [
+				E('button', { class: 'btn', click: ui.hideModal }, 'Отмена'),
+				E('button', { class: 'btn cbi-button-remove', click: () => {
+					const withPkg = purge.checked;
+					ui.hideModal();
+					if (withPkg) {
+						this.bg('del', app.id, '1');
+					} else {
+						sh('del', app.id, '0').then(() => this.refresh());
+					}
+				} }, 'Удалить')
+			])
+		]);
 	},
 
 	refresh() { return js('list').then(a => this.fill(a)); },

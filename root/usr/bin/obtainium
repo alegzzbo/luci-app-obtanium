@@ -96,7 +96,7 @@ cmd_assets() { # repo pre pattern
 
 cmd_add() { # repo pre pattern
 	local r id
-	r=$(printf %s "$1" | sed -E 's#^https?://github\.com/##; s#\.git$##; s#/+$##' | cut -d/ -f1,2)
+	r=$(printf %s "$1" | sed -E 's|^https?://github\.com/||; s|\.git$||; s|/+$||' | cut -d/ -f1,2)
 	printf %s "$r" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "неверный репозиторий"; return; }
 	id=app_$(printf %s "$r" | tr -c 'A-Za-z0-9' _)
 	uci -q get $C.$id >/dev/null && { echo "уже добавлен"; return; }
@@ -105,7 +105,21 @@ cmd_add() { # repo pre pattern
 	uci commit $C; echo ok
 }
 cmd_edit() { uci set $C.$1.pre="$2"; uci set $C.$1.pattern="$3"; uci commit $C; echo ok; }
-cmd_del()  { uci delete $C.$1; uci commit $C; echo ok; }
+cmd_del()  {
+	if [ "$2" = 1 ]; then
+		local pkg repo
+		pkg=$(uci -q get $C.$1.pkg)
+		if [ -z "$pkg" ]; then
+			repo=$(uci -q get $C.$1.repo)
+			pkg=${repo#*/}
+		fi
+		if [ -n "$pkg" ]; then
+			echo "== удаление пакета $pkg"
+			if [ $PM = apk ]; then apk del "$pkg"; else opkg remove "$pkg"; fi
+		fi
+	fi
+	uci delete $C.$1; uci commit $C; echo ok
+}
 cmd_set()  { case $1 in token|interval|auto) uci set $C.main.$1="$2"; uci commit $C; echo ok;; *) echo bad;; esac; }
 
 check_one() {
@@ -138,6 +152,12 @@ upd_one() {
 	done <$D/s
 	if [ $PM = apk ]; then apk add --allow-untrusted $files; else opkg install $files; fi
 	if [ $? = 0 ]; then
+		pkgs=""
+		for f in $files; do
+			pn=$(basename "$f" | sed -E 's/[-_][0-9].*$//')
+			[ -n "$pn" ] && pkgs="$pkgs $pn"
+		done
+		[ -n "$pkgs" ] && uci set $C.$s.pkg="${pkgs# }"
 		uci set $C.$s.installed="$TAG"; uci commit $C; echo "установлено $TAG"
 	else
 		echo "ошибка установки"
