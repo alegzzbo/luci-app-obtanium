@@ -32,9 +32,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${ver}/" "${PKG}/Makefile"
+          sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=${ver}/" Makefile
           echo "Set PKG_VERSION to ${ver}"
-          grep '^PKG_VERSION:=' "${PKG}/Makefile"
+          grep '^PKG_VERSION:=' Makefile
 
       - name: Resolve OpenWrt version
         id: ver
@@ -88,7 +88,7 @@ jobs:
           ./scripts/feeds install -a
 
       - name: Add package to SDK
-        run: rsync -a "./${PKG}/" "sdk/package/${PKG}/"
+        run: rsync -a --exclude '.git' --exclude '.github' --exclude 'sdk' --exclude 'sdk-dl' ./ "sdk/package/${PKG}/"
 
       - name: Build package
         working-directory: sdk
