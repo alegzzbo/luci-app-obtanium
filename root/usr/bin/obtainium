@@ -51,11 +51,11 @@ compat() {
 
 # asset name -> version-independent regex
 suggest() {
-	local v=${2#v} ne ve
+	local v=${2#v} ne
 	ne=$(printf %s "$1" | sed 's/[.+]/\\&/g')
 	if [ -n "$v" ]; then
-		ve=$(printf %s "$v" | sed 's/[.+]/\\&/g')
-		ne=$(printf %s "$ne" | sed "s|$ve|.*|g")
+		local ve=$(printf %s "$v" | sed 's/[.+]/\\&/g')
+		ne=$(printf %s "$ne" | sed "s|$ve|.*|g; s|-r[0-9]\\+|-r.*|g")
 	fi
 	printf '^%s$' "$ne"
 }
