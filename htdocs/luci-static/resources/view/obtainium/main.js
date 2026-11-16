@@ -16,12 +16,13 @@ return view.extend({
 
 	render([cfg, apps]) {
 		const self = this;
-		self.tbody = E('tbody');
+		self.listEl = E('div', { style: 'display:flex;flex-direction:column;gap:10px' });
 		self.logEl = E('pre', { style: 'max-height:18em;overflow:auto;display:none;margin-top:1em' });
 		self.fill(apps);
 
 		const token = E('input', {
-			type: 'password', autocomplete: 'new-password',
+			type: 'password',
+			autocomplete: 'new-password',
 			class: 'cbi-input-password',
 			style: 'width:100%;max-width:26em;box-sizing:border-box',
 			placeholder: cfg.token_set ? '•••••• (задан, введите новый для замены)' : 'ghp_… (необязательно)'
@@ -121,42 +122,41 @@ return view.extend({
 					E('button', { class: 'btn cbi-button', click: () => self.bg('check') }, 'Проверить'),
 					E('button', { class: 'btn cbi-button-action', click: () => self.bg('update') }, 'Обновить все')
 				]),
-				E('div', { style: 'overflow-x:auto;width:100%;-webkit-overflow-scrolling:touch' }, [
-					E('table', { class: 'table', style: 'min-width:520px;width:100%;table-layout:auto' }, [
-						E('thead', {}, E('tr', { class: 'tr table-titles' },
-							['Репозиторий', 'Установлено', 'Последняя', 'Фильтр', ''].map(t =>
-								E('th', { class: 'th', style: 'white-space:nowrap' }, t)
-							)
-						)),
-						self.tbody
-					])
-				]),
+				self.listEl,
 				self.logEl
 			])
 		]);
 	},
 
 	fill(apps) {
-		const tdStyle = 'white-space:nowrap;vertical-align:middle';
-		dom.content(this.tbody, apps.length ? apps.map(a => {
+		dom.content(this.listEl, apps.length ? apps.map(a => {
 			const old = a.latest && a.installed !== a.latest;
-			return E('tr', { class: 'tr' }, [
-				E('td', { class: 'td', style: tdStyle }, E('a', { href: 'https://github.com/' + a.repo, target: '_blank' },
-					a.repo + (a.pre ? ' (pre)' : ''))),
-				E('td', { class: 'td', style: tdStyle }, a.installed || '—'),
-				E('td', { class: 'td', style: tdStyle + (old ? ';font-weight:bold;color:#e67e00' : '') }, a.latest || '—'),
-				E('td', { class: 'td', style: tdStyle }, E('code', {}, a.pattern || '(все)')),
-				E('td', { class: 'td', style: tdStyle }, [
-					E('div', { style: 'display:inline-flex;gap:6px;flex-wrap:nowrap' }, [
-						E('button', { class: 'btn cbi-button', click: () => this.pick(a, p =>
-							sh('edit', a.id, b(a.pre), p).then(() => this.refresh())) }, 'Сборки'),
-						E('button', { class: 'btn cbi-button-action', click: () => this.bg('install', a.id) }, 'Установить'),
-						E('button', { class: 'btn cbi-button-remove', click: () =>
-							sh('del', a.id).then(() => this.refresh()) }, 'Удалить')
-					])
+			return E('div', {
+				style: 'display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid rgba(128,128,128,.25);border-radius:8px;background:rgba(128,128,128,.04)'
+			}, [
+				E('div', { style: 'flex:1 1 220px;min-width:0' }, [
+					E('div', { style: 'font-weight:600;word-break:break-word;margin-bottom:4px' }, [
+						E('a', { href: 'https://github.com/' + a.repo, target: '_blank' },
+							a.repo + (a.pre ? ' (pre)' : ''))
+					]),
+					E('div', { style: 'display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:.9em' }, [
+						E('span', { style: 'opacity:.8' }, 'Уст.: ' + (a.installed || '—')),
+						E('span', { style: 'opacity:.4' }, '·'),
+						E('span', { style: old ? 'font-weight:bold;color:#e67e00' : 'opacity:.8' },
+							'Посл.: ' + (a.latest || '—'))
+					]),
+					a.pattern ? E('div', { style: 'margin-top:4px;font-size:.82em;opacity:.75;word-break:break-all' },
+						E('code', {}, a.pattern)) : ''
+				]),
+				E('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, [
+					E('button', { class: 'btn cbi-button', click: () => this.pick(a, p =>
+						sh('edit', a.id, b(a.pre), p).then(() => this.refresh())) }, 'Сборки'),
+					E('button', { class: 'btn cbi-button-action', click: () => this.bg('install', a.id) }, 'Установить'),
+					E('button', { class: 'btn cbi-button-remove', click: () =>
+						sh('del', a.id).then(() => this.refresh()) }, 'Удалить')
 				])
 			]);
-		}) : E('tr', { class: 'tr' }, E('td', { class: 'td', colspan: 5 }, E('em', {}, 'Список пуст'))));
+		}) : E('em', {}, 'Список пуст'));
 	},
 
 	refresh() { return js('list').then(a => this.fill(a)); },
