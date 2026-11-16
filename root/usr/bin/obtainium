@@ -19,14 +19,15 @@ jes() { printf %s "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 gh() {
 	if [ -n "$TOKEN" ]; then
-		curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $TOKEN" "$1"
+		curl -fsSL -m 30 -A "openwrt-obtainium" -H 'Accept: application/vnd.github+json' -H "Authorization: Bearer $TOKEN" "$1"
 	else
-		curl -fsSL -m 30 -H 'Accept: application/vnd.github+json' "$1"
+		curl -fsSL -m 30 -A "openwrt-obtainium" -H 'Accept: application/vnd.github+json' "$1"
 	fi
 }
 
 # fetch repo pre -> J (json), P (jsonpath prefix), TAG
 fetch() {
+	set -- "$(printf %s "$1" | sed -E "s#^https?://github\.com/##; s#\.git$##; s#/+$##" | cut -d/ -f1,2)" "$2"
 	if [ "$2" = 1 ]; then
 		J=$(gh "$API/repos/$1/releases?per_page=3") && P='@[0]'
 	else
@@ -40,7 +41,7 @@ fetch() {
 compat() {
 	jsonfilter -s "$J" -e "$P.assets[*].name" >$D/n
 	jsonfilter -s "$J" -e "$P.assets[*].browser_download_url" >$D/u
-	paste $D/n $D/u | grep -E "^[^$T]*\.$EXT$T" >$D/a0
+	awk 'NR==FNR{a[NR]=$0;next}{print a[FNR]"\t"$0}' $D/n $D/u | grep -E "^[^$T]*\.$EXT$T" >$D/a0
 	if grep -qE "^[^$T]*$ARCH[^$T]*$T" $D/a0; then
 		grep -E "^[^$T]*($ARCH|_all\.|-all\.|noarch)[^$T]*$T" $D/a0
 	else
