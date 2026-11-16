@@ -74,6 +74,7 @@ list_app() {
 cmd_list() { config_load $C; SEP=; printf '['; config_foreach list_app app; printf ']\n'; }
 
 cmd_assets() { # repo pre pattern
+	[ -n "$1" ] || { echo '{"error":"usage: obtainium assets <owner/repo> [pre] [pattern]"}'; return 1; }
 	local pat=$3 n u sel first=1 tot kept
 	if ! fetch "$1" "$2"; then
 		echo '{"error":"запрос не удался (лимит API / нет релизов / нет репозитория)"}'; return
@@ -92,6 +93,7 @@ cmd_assets() { # repo pre pattern
 }
 
 cmd_add() { # repo pre pattern
+	[ -n "$1" ] || { echo "usage: obtainium add <owner/repo> [pre:0|1] [pattern]"; return 1; }
 	local r id
 	r=$(printf %s "$1" | sed -E 's|^https?://github\.com/||; s|\.git$||; s|/+$||' | cut -d/ -f1,2)
 	printf %s "$r" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || { echo "неверный репозиторий"; return; }
@@ -101,8 +103,14 @@ cmd_add() { # repo pre pattern
 	uci set $C.$id.repo="$r"; uci set $C.$id.pre="$2"; uci set $C.$id.pattern="$3"
 	uci commit $C; echo ok
 }
-cmd_edit() { uci set $C.$1.pre="$2"; uci set $C.$1.pattern="$3"; uci commit $C; echo ok; }
+cmd_edit() {
+	[ -n "$1" ] && [ -n "$2" ] || { echo "usage: obtainium edit <id> <pre:0|1> [pattern]"; return 1; }
+	uci -q get $C.$1 >/dev/null || { echo "не найден: $1"; return 1; }
+	uci set $C.$1.pre="$2"; uci set $C.$1.pattern="$3"; uci commit $C; echo ok
+}
 cmd_del()  {
+	[ -n "$1" ] || { echo "usage: obtainium del <id> [purge:0|1]"; return 1; }
+	uci -q get $C.$1 >/dev/null || { echo "не найден: $1"; return 1; }
 	if [ "$2" = 1 ]; then
 		local pkg repo
 		pkg=$(uci -q get $C.$1.pkg)
@@ -117,7 +125,10 @@ cmd_del()  {
 	fi
 	uci delete $C.$1; uci commit $C; echo ok
 }
-cmd_set()  { case $1 in token|interval|auto) uci set $C.main.$1="$2"; uci commit $C; echo ok;; *) echo bad;; esac; }
+cmd_set()  {
+	[ $# -ge 2 ] || { echo "usage: obtainium set <token|interval|auto> <value>"; return 1; }
+	case $1 in token|interval|auto) uci set $C.main.$1="$2"; uci commit $C; echo ok;; *) echo "usage: obtainium set <token|interval|auto> <value>"; return 1;; esac
+}
 
 check_one() {
 	local s=$1 repo pre
